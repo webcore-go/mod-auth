@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/KaderKita/data-registry-mod-middleware/config"
 	"github.com/gofiber/fiber/v2"
+	"github.com/webcore-go/mod-auth/config"
 	"github.com/webcore-go/webcore/adapter/auth/authn"
 	"github.com/webcore-go/webcore/app/core"
 	"github.com/webcore-go/webcore/app/out"
@@ -19,9 +19,10 @@ const (
 )
 
 type Module struct {
-	config *config.ModuleConfig
-	routes []*core.ModuleRoute
-	authn  *authn.AuthN
+	context *core.AppContext
+	config  *config.ModuleConfig
+	routes  []*core.ModuleRoute
+	authn   *authn.AuthN
 }
 
 func NewModule() *Module {
@@ -59,7 +60,7 @@ func (m *Module) Info(c *fiber.Ctx) error {
 	info := map[string]any{
 		"name":        ModuleName,
 		"version":     ModuleVersion,
-		"description": "Modul Login",
+		"description": "Modul Authentication",
 		"path":        "/" + ModuleName,
 		"endpoints":   endpoints,
 		"config":      m.config,
@@ -68,6 +69,7 @@ func (m *Module) Info(c *fiber.Ctx) error {
 }
 
 func (m *Module) Init(ctx *core.AppContext) error {
+	m.context = ctx
 	m.config = &config.ModuleConfig{}
 	if err := appConfig.LoadDefaultConfigModule(m.Name(), m.config); err != nil {
 		return err
@@ -81,7 +83,7 @@ func (m *Module) Init(ctx *core.AppContext) error {
 	}
 
 	m.registerRoutes(ctx.Web)
-	logger.Info("Module Auth initialized successfully")
+	logger.Info("Module Authentication initialized successfully")
 
 	return nil
 }
@@ -90,7 +92,7 @@ func (m *Module) Destroy() error {
 	return nil
 }
 
-func (m *Module) Config() appConfig.Configurable {
+func (m *Module) Config() appConfig.ConfigObject {
 	return m.config
 }
 
@@ -115,23 +117,23 @@ func (m *Module) registerRoutes(root *fiber.App) {
 
 	m.routes = core.AppendRouteToArray(m.routes, &core.ModuleRoute{
 		Method:  "POST",
-		Path:    "/token",
+		Path:    m.config.LoginPath,
 		Handler: m.AuthLogin,
-		Root:    moduleRoot,
+		Root:    root,
 	})
 
 	m.routes = core.AppendRouteToArray(m.routes, &core.ModuleRoute{
-		Method:  "POST",
-		Path:    "/refresh",
-		Handler: m.AuthTokenRefresh,
-		Root:    moduleRoot,
+		Method:   "POST",
+		Path:     m.config.RefreshPath,
+		Handlers: []fiber.Handler{m.context.AuthHandler, m.AuthTokenRefresh},
+		Root:     root,
 	})
 
 	m.routes = core.AppendRouteToArray(m.routes, &core.ModuleRoute{
-		Method:  "POST",
-		Path:    "/logout",
-		Handler: m.AuthLogout,
-		Root:    moduleRoot,
+		Method:   "POST",
+		Path:     m.config.LogoutPath,
+		Handlers: []fiber.Handler{m.context.AuthHandler, m.AuthLogout},
+		Root:     root,
 	})
 
 	m.routes = core.AppendRouteToArray(m.routes, &core.ModuleRoute{
